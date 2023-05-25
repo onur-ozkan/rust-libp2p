@@ -2381,7 +2381,7 @@ checksum = "7fc7aa29613bd6a620df431842069224d8bc9011086b1db4c0e0cd47fa03ec9a"
 
 [[package]]
 name = "libp2p"
-version = "0.52.0"
+version = "0.52.1"
 dependencies = [
  "async-std",
  "async-trait",
@@ -2575,7 +2575,7 @@ dependencies = [
 
 [[package]]
 name = "libp2p-floodsub"
-version = "0.43.0"
+version = "0.43.1"
 dependencies = [
  "asynchronous-codec",
  "cuckoofilter",
@@ -2594,7 +2594,7 @@ dependencies = [
 
 [[package]]
 name = "libp2p-gossipsub"
-version = "0.45.0"
+version = "0.45.1"
 dependencies = [
  "async-std",
  "asynchronous-codec",
