@@ -56,6 +56,7 @@ use crate::metrics::{Churn, Config as MetricsConfig, Inclusion, Metrics, Penalty
 use crate::{
     backoff::BackoffStorage,
     config::{Config, ValidationMode},
+    error::SequenceNumberError,
     gossip_promises::GossipPromises,
     handler::{Handler, HandlerEvent, HandlerIn},
     mcache::MessageCache,
@@ -188,22 +189,21 @@ enum PublishConfig {
 struct SequenceNumber(u64);
 
 impl SequenceNumber {
-    fn new() -> Self {
+    fn new() -> Result<Self, SequenceNumberError> {
         let unix_timestamp = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
-            .expect("time to be linear")
-            .as_nanos();
+            .map_err(|_| SequenceNumberError::ClockBeforeUnixEpoch)?
+            .as_millis();
 
-        Self(unix_timestamp as u64)
+        let timestamp = u64::try_from(unix_timestamp).map_err(|_| SequenceNumberError::Overflow)?;
+
+        Ok(Self(timestamp))
     }
 
-    fn next(&mut self) -> u64 {
-        self.0 = self
-            .0
-            .checked_add(1)
-            .expect("to not exhaust u64 space for sequence numbers");
+    fn next(&mut self) -> Result<u64, SequenceNumberError> {
+        self.0 = self.0.checked_add(1).ok_or(SequenceNumberError::Overflow)?;
 
-        self.0
+        Ok(self.0)
     }
 }
 
@@ -217,8 +217,10 @@ impl PublishConfig {
     }
 }
 
-impl From<MessageAuthenticity> for PublishConfig {
-    fn from(authenticity: MessageAuthenticity) -> Self {
+impl TryFrom<MessageAuthenticity> for PublishConfig {
+    type Error = SequenceNumberError;
+
+    fn try_from(authenticity: MessageAuthenticity) -> Result<Self, Self::Error> {
         match authenticity {
             MessageAuthenticity::Signed(keypair) => {
                 let public_key = keypair.public();
@@ -233,16 +235,16 @@ impl From<MessageAuthenticity> for PublishConfig {
                     Some(key_enc)
                 };
 
-                PublishConfig::Signing {
+                Ok(PublishConfig::Signing {
                     keypair,
                     author: public_key.to_peer_id(),
                     inline_key: key,
-                    last_seq_no: SequenceNumber::new(),
-                }
+                    last_seq_no: SequenceNumber::new()?,
+                })
             }
-            MessageAuthenticity::Author(peer_id) => PublishConfig::Author(peer_id),
-            MessageAuthenticity::RandomAuthor => PublishConfig::RandomAuthor,
-            MessageAuthenticity::Anonymous => PublishConfig::Anonymous,
+            MessageAuthenticity::Author(peer_id) => Ok(PublishConfig::Author(peer_id)),
+            MessageAuthenticity::RandomAuthor => Ok(PublishConfig::RandomAuthor),
+            MessageAuthenticity::Anonymous => Ok(PublishConfig::Anonymous),
         }
     }
 }
@@ -421,11 +423,13 @@ where
         // were received locally.
         validate_config(&privacy, config.validation_mode())?;
 
+        let publish_config = PublishConfig::try_from(privacy)?;
+
         Ok(Behaviour {
             #[cfg(feature = "metrics")]
             metrics: None,
             events: VecDeque::new(),
-            publish_config: privacy.into(),
+            publish_config,
             duplicate_cache: DuplicateCache::new(config.duplicate_cache_time()),
             explicit_peers: HashSet::new(),
             blacklisted_peers: HashSet::new(),
@@ -2774,7 +2778,7 @@ where
                 inline_key,
                 last_seq_no,
             } => {
-                let sequence_number = last_seq_no.next();
+                let sequence_number = last_seq_no.next()?;
 
                 let signature = {
                     let message = proto::Message {

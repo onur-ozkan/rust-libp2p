@@ -40,6 +40,8 @@ pub enum PublishError {
     /// Messages could not be sent because the queues for all peers were full. The usize represents
     /// the number of peers that were attempted.
     AllQueuesFull(usize),
+    /// Failed to create or increment the sequence number.
+    SequenceNumber(SequenceNumberError),
 }
 
 impl std::fmt::Display for PublishError {
@@ -53,6 +55,7 @@ impl std::error::Error for PublishError {
         match self {
             Self::SigningError(err) => Some(err),
             Self::TransformFailed(err) => Some(err),
+            Self::SequenceNumber(err) => Some(err),
             _ => None,
         }
     }
@@ -157,6 +160,38 @@ impl std::fmt::Display for ConfigBuilderError {
             Self::MeshOutboundInvalid => write!(f, "The inequality doesn't hold mesh_outbound_min <= self.config.mesh_n / 2"),
             Self::UnsubscribeBackoffIsZero => write!(f, "unsubscribe_backoff is zero"),
             Self::InvalidProtocol => write!(f, "Invalid protocol"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum SequenceNumberError {
+    /// System clock is before the UNIX epoch, therefore, no timestamp can be produced properly.
+    ClockBeforeUnixEpoch,
+    /// Sequence number is overflowed the maximum [`u64`].
+    Overflow,
+}
+
+impl std::fmt::Display for SequenceNumberError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let str_error: &'static str = (*self).into();
+        write!(f, "{str_error}")
+    }
+}
+
+impl std::error::Error for SequenceNumberError {}
+
+impl From<SequenceNumberError> for PublishError {
+    fn from(error: SequenceNumberError) -> Self {
+        PublishError::SequenceNumber(error)
+    }
+}
+
+impl From<SequenceNumberError> for &'static str {
+    fn from(error: SequenceNumberError) -> Self {
+        match error {
+            SequenceNumberError::ClockBeforeUnixEpoch => "System clock is before the UNIX epoch.",
+            SequenceNumberError::Overflow => "Sequence number is overflowed the maximum u64.",
         }
     }
 }
