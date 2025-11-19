@@ -29,6 +29,9 @@
 - gossipsub: do early return in for an empty input
   See [PR 6208](https://github.com/libp2p/rust-libp2p/pull/6208).
 
+- Add fallible sequence number generation and error handling.
+  See [PR 6211](https://github.com/libp2p/rust-libp2p/pull/6211).
+
 ## 0.49.2
 
 - Relax `Behaviour::with_metrics` requirements, do not require DataTransform and TopicSubscriptionFilter to also impl Default
